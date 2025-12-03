@@ -1,5 +1,5 @@
 class ApiConfig {
-  static const String baseUrl = 'http://localhost:5000/api';
+  static const String baseUrl = 'https://paniwallah-backend.onrender.com/api';
   
   // Auth endpoints
   static const String sendOtp = '$baseUrl/auth/send-otp';
@@ -22,7 +22,7 @@ class ApiConfig {
   static const String validateCoupon = '$baseUrl/coupons/validate';
   
   // Socket URL
-  static const String socketUrl = 'http://localhost:5000';
+  static const String socketUrl = 'https://paniwallah-backend.onrender.com/';
   
   // Razorpay
   static const String razorpayKeyId = 'your_razorpay_key_id';
