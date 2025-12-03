@@ -65,24 +65,32 @@ router.post('/', authMiddleware, async (req, res) => {
       paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Pending'
     });
 
-if (paymentMethod === 'COD') {
-  const codPayment = await createCODPayment(total, order.orderNumber);
+    if (paymentMethod === 'COD') {
+      const codPayment = await createCODPayment(total, order.orderNumber);
 
-  order.paymentMode = "COD";
-  order.paymentStatus = "pending";  // customer will pay on delivery
-  await order.save();
-}
+      order.paymentMode = "COD";
+      order.paymentStatus = "pending";  // customer will pay on delivery
+      await order.save();
+    }
 
-const populatedOrder = await Order.findById(order._id)
-  .populate('items.product')
-  .populate('user', 'name phone');
+    const populatedOrder = await Order.findById(order._id)
+      .populate('items.product')
+      .populate('user', 'name phone');
 
-res.status(201).json({
-  success: true,
-  message: 'Order placed successfully (COD)',
-  order: populatedOrder
-});
+    res.status(201).json({
+      success: true,
+      message: 'Order placed successfully (COD)',
+      order: populatedOrder
+    });
 
+  } catch (error) { // <-- ADDED THIS CATCH BLOCK
+    res.status(500).json({
+      success: false,
+      message: 'Failed to place order',
+      error: error.message
+    });
+  }
+}); // <-- ADDED THIS CLOSING BRACE
 
 router.get('/my-orders', authMiddleware, async (req, res) => {
   try {
