@@ -5,7 +5,7 @@ const Product = require('../models/Product');
 const User = require('../models/User');
 const DeliveryPartner = require('../models/DeliveryPartner');
 const { authMiddleware, adminAuth } = require('../middleware/auth');
-const { createRazorpayOrder, verifyRazorpayPayment } = require('../utils/payment');
+const { createCODPayment } = require("../utils/payment");
 const { sendPushNotification } = require('../utils/notification');
 
 router.post('/', authMiddleware, async (req, res) => {
@@ -65,65 +65,24 @@ router.post('/', authMiddleware, async (req, res) => {
       paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Pending'
     });
 
-    if (paymentMethod === 'Online') {
-      const razorpayOrder = await createRazorpayOrder(total, order.orderNumber);
-      
-      if (razorpayOrder.success) {
-        order.razorpayOrderId = razorpayOrder.order.id;
-        await order.save();
-      }
-    }
+if (paymentMethod === 'COD') {
+  const codPayment = await createCODPayment(total, order.orderNumber);
 
-    const populatedOrder = await Order.findById(order._id)
-      .populate('items.product')
-      .populate('user', 'name phone');
+  order.paymentMode = "COD";
+  order.paymentStatus = "pending";  // customer will pay on delivery
+  await order.save();
+}
 
-    res.status(201).json({
-      success: true,
-      message: 'Order placed successfully',
-      order: populatedOrder
-    });
-  } catch (error) {
-    console.error('Create Order Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create order',
-      error: error.message
-    });
-  }
+const populatedOrder = await Order.findById(order._id)
+  .populate('items.product')
+  .populate('user', 'name phone');
+
+res.status(201).json({
+  success: true,
+  message: 'Order placed successfully (COD)',
+  order: populatedOrder
 });
 
-router.post('/verify-payment', authMiddleware, async (req, res) => {
-  try {
-    const { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
-
-    const isValid = await verifyRazorpayPayment(razorpayOrderId, razorpayPaymentId, razorpaySignature);
-
-    if (!isValid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Payment verification failed'
-      });
-    }
-
-    const order = await Order.findById(orderId);
-    order.paymentStatus = 'Paid';
-    order.razorpayPaymentId = razorpayPaymentId;
-    await order.save();
-
-    res.json({
-      success: true,
-      message: 'Payment verified successfully',
-      order
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Payment verification failed',
-      error: error.message
-    });
-  }
-});
 
 router.get('/my-orders', authMiddleware, async (req, res) => {
   try {
