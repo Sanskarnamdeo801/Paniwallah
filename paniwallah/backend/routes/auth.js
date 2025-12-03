@@ -1,134 +1,51 @@
 const express = require('express');
-const router = express.Router();
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
-const DeliveryPartner = require('../models/DeliveryPartner');
-const OTP = require('../models/OTP');
-const { generateOTP, sendOTP } = require('../utils/sms');
+const router = express.Router();
 
-router.post('/send-otp', async (req, res) => {
+// signup (supports users & business with role=business and businessDetails)
+router.post('/signup', [
+  body('name').notEmpty(),
+  body('password').isLength({ min: 6 })
+], async (req, res) => {
+  const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const { name, email, phone, password, role, businessDetails } = req.body;
   try {
-    const { phone, userType = 'user' } = req.body;
-
-    if (!phone) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone number is required'
-      });
+    if (email) {
+      const exists = await User.findOne({ email }); if (exists) return res.status(400).json({ message:'Email exists' });
     }
-
-    const otp = generateOTP();
-    
-    await OTP.deleteMany({ phone, userType });
-    
-    await OTP.create({
-      phone,
-      otp,
-      userType
-    });
-
-    const smsResult = await sendOTP(phone, otp);
-
-    res.json({
-      success: true,
-      message: 'OTP sent successfully',
-      ...(process.env.NODE_ENV === 'development' && { otp })
-    });
-  } catch (error) {
-    console.error('Send OTP Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send OTP',
-      error: error.message
-    });
+    if (phone) {
+      const exists = await User.findOne({ phone }); if (exists) return res.status(400).json({ message:'Phone exists' });
+    }
+    const hash = await bcrypt.hash(password, 10);
+    const user = await User.create({ name, email, phone, password: hash, role: role || 'user', businessDetails });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user._id, name: user.name, role: user.role } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
-router.post('/verify-otp', async (req, res) => {
+// login
+router.post('/login', [
+  body('email').optional().isEmail(),
+  body('phone').optional().isString(),
+  body('password').exists()
+], async (req, res) => {
+  const { email, phone, password } = req.body;
   try {
-    const { phone, otp, userType = 'user', name } = req.body;
-
-    if (!phone || !otp) {
-      return res.status(400).json({
-        success: false,
-        message: 'Phone and OTP are required'
-      });
-    }
-
-    const otpRecord = await OTP.findOne({
-      phone,
-      otp,
-      userType,
-      verified: false,
-      expiresAt: { $gt: new Date() }
-    });
-
-    if (!otpRecord) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired OTP'
-      });
-    }
-
-    otpRecord.verified = true;
-    await otpRecord.save();
-
-    let user;
-    let isNewUser = false;
-
-    if (userType === 'user') {
-      user = await User.findOne({ phone });
-      if (!user) {
-        user = await User.create({
-          phone,
-          name: name || 'User'
-        });
-        isNewUser = true;
-      }
-    } else if (userType === 'delivery_partner') {
-      user = await DeliveryPartner.findOne({ phone });
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'Delivery partner not found. Please contact admin.'
-        });
-      }
-    } else if (userType === 'admin') {
-      if (phone === process.env.ADMIN_PHONE || phone === '+919999999999') {
-        user = { _id: 'admin', phone, name: 'Admin' };
-      } else {
-        return res.status(403).json({
-          success: false,
-          message: 'Unauthorized admin access'
-        });
-      }
-    }
-
-    const token = jwt.sign(
-      { userId: user._id, userType },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        phone: user.phone,
-        userType
-      },
-      isNewUser
-    });
-  } catch (error) {
-    console.error('Verify OTP Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to verify OTP',
-      error: error.message
-    });
+    const user = email ? await User.findOne({ email }) : await User.findOne({ phone });
+    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user._id, name: user.name, role: user.role } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
