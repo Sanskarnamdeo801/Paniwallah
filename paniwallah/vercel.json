@@ -1,11 +1,1 @@
-{
-  "builds": [
-    {
-      "src": "paniwallah/pubspec.yaml",
-      "use": "@sanchezs/vercel-dart",
-      "config": {
-        "outputDirectory": "paniwallah/build/web"
-      }
-    }
-  ]
-}
+
